@@ -63,6 +63,11 @@ def post_comment():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/echo", methods=["POST"])
+def echo():
+    raw = request.get_data(as_text=True)
+    return jsonify({"received": raw, "content_type": request.content_type, "headers": dict(request.headers)})
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"status": "ok", "session_configured": bool(IG_SESSION_ID)})

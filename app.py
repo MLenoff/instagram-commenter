@@ -52,7 +52,7 @@ def post_comment():
             f"https://i.instagram.com/api/v1/media/{media_id}/comment/",
             headers=headers,
             data={"comment_text": comment},
-            timeout=20
+            timeout=5
         )
 
         if resp.status_code == 200:

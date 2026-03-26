@@ -26,7 +26,7 @@ def ensure_logged_in():
         t = threading.Thread(target=do_login)
         t.daemon = True
         t.start()
-        t.join(25)  # 25 second timeout
+        t.join(10)  # 10 second timeout
 
         if t.is_alive():
             raise Exception("Instagram login timed out — Instagram may be blocking this IP or requiring verification")

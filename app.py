@@ -24,7 +24,7 @@ def post_comment():
     if API_SECRET and secret != API_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    data = request.get_json()
+    data = request.get_json(force=True, silent=True) or {}
     short_code = data.get("short_code")
     comment    = data.get("comment")
 

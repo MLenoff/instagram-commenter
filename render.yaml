@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: instagram-commenter
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
+    envVars:
+      - key: IG_USERNAME
+        sync: false
+      - key: IG_PASSWORD
+        sync: false
+      - key: API_SECRET
+        sync: false

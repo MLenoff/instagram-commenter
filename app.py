@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from instagrapi import Client
 import os
+import threading
 
 app = Flask(__name__)
 
@@ -14,21 +15,33 @@ logged_in = False
 def ensure_logged_in():
     global logged_in
     if not logged_in:
-        cl.login(IG_USERNAME, IG_PASSWORD)
+        result = {"error": None}
+
+        def do_login():
+            try:
+                cl.login(IG_USERNAME, IG_PASSWORD)
+            except Exception as e:
+                result["error"] = str(e)
+
+        t = threading.Thread(target=do_login)
+        t.daemon = True
+        t.start()
+        t.join(25)  # 25 second timeout
+
+        if t.is_alive():
+            raise Exception("Instagram login timed out — Instagram may be blocking this IP or requiring verification")
+        if result["error"]:
+            raise Exception(result["error"])
+
         logged_in = True
 
 @app.route("/comment", methods=["POST"])
 def post_comment():
-    # Simple secret check so only N8N can call this
     secret = request.headers.get("X-API-Secret", "")
     if API_SECRET and secret != API_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    raw = request.get_data(as_text=True)
-    print(f"DEBUG raw body: {repr(raw)}")
-    print(f"DEBUG content-type: {request.content_type}")
     data = request.get_json(force=True, silent=True) or {}
-    print(f"DEBUG parsed data: {data}")
     short_code = data.get("short_code")
     comment    = data.get("comment")
 
@@ -42,7 +55,7 @@ def post_comment():
         return jsonify({"success": True, "short_code": short_code})
     except Exception as e:
         global logged_in
-        logged_in = False  # Force re-login on next request
+        logged_in = False
         return jsonify({"error": str(e)}), 500
 
 @app.route("/health", methods=["GET"])

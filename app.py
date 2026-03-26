@@ -11,35 +11,34 @@ API_SECRET  = os.environ.get("API_SECRET", "")
 
 cl = Client()
 logged_in = False
+login_error = None
 
-def ensure_logged_in():
-    global logged_in
-    if not logged_in:
-        result = {"error": None}
-
-        def do_login():
-            try:
-                cl.login(IG_USERNAME, IG_PASSWORD)
-            except Exception as e:
-                result["error"] = str(e)
-
-        t = threading.Thread(target=do_login)
-        t.daemon = True
-        t.start()
-        t.join(10)  # 10 second timeout
-
-        if t.is_alive():
-            raise Exception("Instagram login timed out — Instagram may be blocking this IP or requiring verification")
-        if result["error"]:
-            raise Exception(result["error"])
-
+def background_login():
+    global logged_in, login_error
+    try:
+        print(f"Attempting Instagram login for {IG_USERNAME}...")
+        cl.login(IG_USERNAME, IG_PASSWORD)
         logged_in = True
+        print("Instagram login successful!")
+    except Exception as e:
+        login_error = str(e)
+        print(f"Instagram login failed: {e}")
+
+# Start login immediately when the app loads
+login_thread = threading.Thread(target=background_login, daemon=True)
+login_thread.start()
 
 @app.route("/comment", methods=["POST"])
 def post_comment():
     secret = request.headers.get("X-API-Secret", "")
     if API_SECRET and secret != API_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
+
+    if login_error:
+        return jsonify({"error": f"Instagram login failed: {login_error}"}), 500
+
+    if not logged_in:
+        return jsonify({"error": "Instagram login in progress, please retry in 30 seconds"}), 503
 
     data = request.get_json(force=True, silent=True) or {}
     short_code = data.get("short_code")
@@ -49,14 +48,23 @@ def post_comment():
         return jsonify({"error": "short_code and comment are required"}), 400
 
     try:
-        ensure_logged_in()
         media_id = cl.media_pk_from_code(short_code)
         cl.media_comment(media_id, comment)
         return jsonify({"success": True, "short_code": short_code})
     except Exception as e:
         global logged_in
         logged_in = False
+        # Retry login in background
+        t = threading.Thread(target=background_login, daemon=True)
+        t.start()
         return jsonify({"error": str(e)}), 500
+
+@app.route("/status", methods=["GET"])
+def status():
+    return jsonify({
+        "logged_in": logged_in,
+        "login_error": login_error
+    })
 
 @app.route("/health", methods=["GET"])
 def health():

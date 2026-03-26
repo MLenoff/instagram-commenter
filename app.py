@@ -1,21 +1,21 @@
 from flask import Flask, request, jsonify
-from instagrapi import Client
 import os
+import requests as req
 
 app = Flask(__name__)
 
-IG_USERNAME = os.environ.get("IG_USERNAME")
-IG_PASSWORD = os.environ.get("IG_PASSWORD")
-API_SECRET  = os.environ.get("API_SECRET", "")
+API_SECRET   = os.environ.get("API_SECRET", "")
+IG_SESSION_ID = os.environ.get("IG_SESSION_ID", "")
+IG_CSRF_TOKEN = os.environ.get("IG_CSRF_TOKEN", "")
 
-cl = Client()
-logged_in = False
+# Instagram alphabet for short_code → media_id conversion
+IG_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
-def ensure_logged_in():
-    global logged_in
-    if not logged_in:
-        cl.login(IG_USERNAME, IG_PASSWORD)
-        logged_in = True
+def shortcode_to_media_id(shortcode):
+    media_id = 0
+    for char in shortcode:
+        media_id = media_id * 64 + IG_ALPHABET.index(char)
+    return media_id
 
 @app.route("/comment", methods=["POST"])
 def post_comment():
@@ -30,19 +30,38 @@ def post_comment():
     if not short_code or not comment:
         return jsonify({"error": "short_code and comment are required"}), 400
 
+    if not IG_SESSION_ID:
+        return jsonify({"error": "IG_SESSION_ID not configured"}), 500
+
     try:
-        ensure_logged_in()
-        media_id = cl.media_pk_from_code(short_code)
-        cl.media_comment(media_id, comment)
-        return jsonify({"success": True, "short_code": short_code})
+        media_id = shortcode_to_media_id(short_code)
+
+        headers = {
+            "User-Agent": "Instagram 123.0.0.21.114 Android (28/9; 411dpi; 1080x2220; samsung; SM-G973F; beyond1; exynos9820; en_US; 190321992)",
+            "X-CSRFToken": IG_CSRF_TOKEN,
+            "Cookie": f"sessionid={IG_SESSION_ID}; csrftoken={IG_CSRF_TOKEN}",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-IG-App-ID": "936619743392459",
+        }
+
+        resp = req.post(
+            f"https://i.instagram.com/api/v1/media/{media_id}/comment/",
+            headers=headers,
+            data={"comment_text": comment},
+            timeout=20
+        )
+
+        if resp.status_code == 200:
+            return jsonify({"success": True, "short_code": short_code})
+        else:
+            return jsonify({"error": f"Instagram API error {resp.status_code}: {resp.text[:300]}"}), 500
+
     except Exception as e:
-        global logged_in
-        logged_in = False
         return jsonify({"error": str(e)}), 500
 
 @app.route("/health", methods=["GET"])
 def health():
-    return jsonify({"status": "ok"})
+    return jsonify({"status": "ok", "session_configured": bool(IG_SESSION_ID)})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

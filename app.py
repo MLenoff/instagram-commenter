@@ -1,14 +1,16 @@
 from flask import Flask, request, jsonify
 import os
 import requests as req
+import json as _json
 
 app = Flask(__name__)
 
-API_SECRET   = os.environ.get("API_SECRET", "")
+API_SECRET    = os.environ.get("API_SECRET", "")
 IG_SESSION_ID = os.environ.get("IG_SESSION_ID", "")
 IG_CSRF_TOKEN = os.environ.get("IG_CSRF_TOKEN", "")
+IG_DID        = os.environ.get("IG_DID", "")
+IG_MID        = os.environ.get("IG_MID", "")
 
-# Instagram alphabet for short_code → media_id conversion
 IG_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
 
 def shortcode_to_media_id(shortcode):
@@ -23,7 +25,6 @@ def post_comment():
     if API_SECRET and secret != API_SECRET:
         return jsonify({"error": "Unauthorized"}), 401
 
-    import json as _json
     try:
         data = _json.loads(request.get_data(as_text=True) or "{}")
     except Exception:
@@ -40,19 +41,32 @@ def post_comment():
     try:
         media_id = shortcode_to_media_id(short_code)
 
+        cookie_parts = [
+            f"sessionid={IG_SESSION_ID}",
+            f"csrftoken={IG_CSRF_TOKEN}",
+        ]
+        if IG_DID:
+            cookie_parts.append(f"ig_did={IG_DID}")
+        if IG_MID:
+            cookie_parts.append(f"mid={IG_MID}")
+        cookie_str = "; ".join(cookie_parts)
+
         headers = {
-            "User-Agent": "Instagram 123.0.0.21.114 Android (28/9; 411dpi; 1080x2220; samsung; SM-G973F; beyond1; exynos9820; en_US; 190321992)",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             "X-CSRFToken": IG_CSRF_TOKEN,
-            "Cookie": f"sessionid={IG_SESSION_ID}; csrftoken={IG_CSRF_TOKEN}",
+            "Cookie": cookie_str,
             "Content-Type": "application/x-www-form-urlencoded",
-            "X-IG-App-ID": "936619743392459",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"https://www.instagram.com/p/{short_code}/",
+            "Origin": "https://www.instagram.com",
         }
 
         resp = req.post(
-            f"https://i.instagram.com/api/v1/media/{media_id}/comment/",
+            f"https://www.instagram.com/api/v1/web/comments/{media_id}/add/",
             headers=headers,
             data={"comment_text": comment},
-            timeout=5
+            timeout=10,
+            allow_redirects=False
         )
 
         if resp.status_code == 200:
